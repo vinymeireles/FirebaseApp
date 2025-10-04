@@ -137,14 +137,86 @@ class _NotesPageState extends State<NotesPage> {
      gp = pos['geopoint'] as GeoPoint;
    }
 
-   final ll.LatLng? initialLatLng = gp == null
+   ll.LatLng? initialLatLng = gp == null
        ? null
        : ll.LatLng(gp.latitude, gp.longitude);
    final double? initialZoom = (data['zoom'] as num?)?.toDouble();
-   final String? initialAddress =
+   String? initialAddress =
        (data['address'] as String?)?.trim().isEmpty == true
        ? null
        : data['address']?.toString();
+
+   ll.LatLng? finalLatLng;
+   String? finalAddress;
+
+   final init = data['initial'];
+   if (init is Map) {
+     final ipos = init['position'];
+     GeoPoint? igp;
+     if (ipos is GeoPoint) {
+       igp = ipos;
+     } else if (ipos is Map && ipos['geopoint'] is GeoPoint) {
+       igp = ipos['geopoint'] as GeoPoint;
+     }
+     if (igp != null) initialLatLng = ll.LatLng(igp.latitude, igp.longitude);
+     final ia = (init['address'] as String?)?.trim();
+     if (ia != null && ia.isNotEmpty) initialAddress = ia;
+   }
+
+   final fin = data['final'];
+   if (fin is Map) {
+     final fpos = fin['position'];
+     GeoPoint? fgp;
+     if (fpos is GeoPoint) {
+       fgp = fpos;
+     } else if (fpos is Map && fpos['geopoint'] is GeoPoint) {
+       fgp = fpos['geopoint'] as GeoPoint;
+     }
+     if (fgp != null) finalLatLng = ll.LatLng(fgp.latitude, fgp.longitude);
+     final fa = (fin['address'] as String?)?.trim();
+     if (fa != null && fa.isNotEmpty) finalAddress = fa;
+   }
+
+   final legacyRoute = data['route'];
+   if (legacyRoute is Map) {
+     final origin = legacyRoute['origin'];
+     if (origin is Map) {
+       final oPos = origin['position'];
+       GeoPoint? ogp;
+       if (oPos is GeoPoint) {
+         ogp = oPos;
+       } else if (oPos is Map && oPos['geopoint'] is GeoPoint) {
+         ogp = oPos['geopoint'] as GeoPoint;
+       }
+       if (ogp != null) initialLatLng = ll.LatLng(ogp.latitude, ogp.longitude);
+       final oa = (origin['address'] as String?)?.trim();
+       if (oa != null && oa.isNotEmpty) initialAddress = oa;
+     }
+
+     final dest = legacyRoute['destination'];
+     if (dest is Map) {
+       final dPos = dest['position'];
+       GeoPoint? dgp;
+       if (dPos is GeoPoint) {
+         dgp = dPos;
+       } else if (dPos is Map && dPos['geopoint'] is GeoPoint) {
+         dgp = dPos['geopoint'] as GeoPoint;
+       }
+       if (dgp != null) finalLatLng = ll.LatLng(dgp.latitude, dgp.longitude);
+       final da = (dest['address'] as String?)?.trim();
+       if (da != null && da.isNotEmpty) finalAddress = da;
+     }
+   }
+
+   String? polyline6 = (data['polyline6'] as String?)?.trim();
+   double? distanceM = (data['distanceM'] as num?)?.toDouble();
+   double? durationS = (data['durationS'] as num?)?.toDouble();
+
+   if ((polyline6 == null || polyline6.isEmpty) && legacyRoute is Map) {
+     polyline6 = (legacyRoute['polyline6'] as String?)?.trim();
+     distanceM ??= (legacyRoute['distanceM'] as num?)?.toDouble();
+     durationS ??= (legacyRoute['durationS'] as num?)?.toDouble();
+   }
 
    Navigator.push(
      context,
@@ -154,9 +226,62 @@ class _NotesPageState extends State<NotesPage> {
          initialLatLng: initialLatLng,
          initialZoom: initialZoom,
          initialAddress: initialAddress,
+         finalLatLng: finalLatLng,
+         finalAddress: finalAddress,
+         initialPolyline6: polyline6,
+         initialDistanceM: distanceM,
+         initialDurationS: durationS,
        ),
      ),
    );
+ }
+
+ String? _routeSubtitle(Map<String, dynamic> data) {
+   String? iAddr;
+   String? fAddr;
+   double? distM = (data['distanceM'] as num?)?.toDouble();
+   double? durS = (data['durationS'] as num?)?.toDouble();
+
+   final init = data['initial'];
+   if (init is Map) {
+     final ia = (init['address'] as String?)?.trim();
+     if (ia != null && ia.isNotEmpty) iAddr = ia;
+   }
+   final fin = data['final'];
+   if (fin is Map) {
+     final fa = (fin['address'] as String?)?.trim();
+     if (fa != null && fa.isNotEmpty) fAddr = fa;
+   }
+
+   if (iAddr == null || fAddr == null) {
+     final route = data['route'];
+     if (route is Map) {
+       final origin = route['origin'];
+       if (origin is Map) {
+         final oa = (origin['address'] as String?)?.trim();
+         if (oa != null && oa.isNotEmpty) iAddr = oa;
+       }
+       final dest = route['destination'];
+       if (dest is Map) {
+         final da = (dest['address'] as String?)?.trim();
+         if (da != null && da.isNotEmpty) fAddr = da;
+       }
+       distM ??= (route['distanceM'] as num?)?.toDouble();
+       durS ??= (route['durationS'] as num?)?.toDouble();
+     }
+   }
+
+   if (iAddr != null && fAddr != null) {
+     final parts = <String>['$iAddr → $fAddr'];
+     if (distM != null) parts.add('${(distM / 1000).toStringAsFixed(2)} km');
+     if (durS != null) parts.add('${(durS / 60).toStringAsFixed(0)} min');
+     return parts.join(' · ');
+   }
+
+   iAddr ??= (data['address'] as String?)?.trim();
+   if (iAddr != null && iAddr.isNotEmpty) return iAddr;
+
+   return null;
  }
 
  @override
@@ -225,7 +350,6 @@ class _NotesPageState extends State<NotesPage> {
                        final doc = docs[i];
                        final data = doc.data();
                        final isEditing = editingId == doc.id;
-                       final address = (data['address'] ?? '').toString();
 
                        if (isEditing) {
                          return Padding(
@@ -265,12 +389,14 @@ class _NotesPageState extends State<NotesPage> {
                          );
                        }
 
+                       final subtitleText = _routeSubtitle(data);
+
                        return ListTile(
                          title: Text((data['description'] ?? '').toString()),
-                         subtitle: address.isEmpty
+                         subtitle: subtitleText == null
                              ? null
                              : Text(
-                                 address,
+                                 subtitleText,
                                  maxLines: 2,
                                  overflow: TextOverflow.ellipsis,
                                ),
