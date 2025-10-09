@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart' as ll;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'package:geoflutterfire_plus/geoflutterfire_plus.dart';
+import 'package:geolocator/geolocator.dart';
 
 enum MapEditorMode { initial, finalPoint }
 
@@ -91,6 +92,10 @@ class _MapViewerEditorPageState extends State<MapViewerEditorPage> {
        }
      }
 
+     if (_initialPoint == null) {
+       await _setInitialFromGPS();
+     }
+
      if (_initialPoint != null && _finalPoint != null) {
        await _fetchRoute(_initialPoint!, _finalPoint!);
      } else if (_initialPoint != null) {
@@ -101,6 +106,46 @@ class _MapViewerEditorPageState extends State<MapViewerEditorPage> {
        _safeMove(_worldCenter, _worldZoom);
      }
    });
+ }
+
+ Future<void> _setInitialFromGPS() async {
+   final permission = await _ensureLocationPermission();
+   if (!permission) return;
+   try {
+     final pos = await Geolocator.getCurrentPosition();
+     final p = ll.LatLng(pos.latitude, pos.longitude);
+     setState(() {
+       _initialPoint = p;
+       if (_zoom <= _worldZoom) _zoom = 14;
+     });
+     _safeMove(p, _zoom);
+   } catch (_) {}
+ }
+
+ Future<bool> _ensureLocationPermission() async {
+   final enabled = await Geolocator.isLocationServiceEnabled();
+   if (!enabled) {
+     if (mounted) {
+       ScaffoldMessenger.of(context).showSnackBar(
+         const SnackBar(content: Text('Serviço de localização desativado.')),
+       );
+     }
+     return false;
+   }
+   LocationPermission permission = await Geolocator.checkPermission();
+   if (permission == LocationPermission.denied) {
+     permission = await Geolocator.requestPermission();
+   }
+   if (permission == LocationPermission.denied ||
+       permission == LocationPermission.deniedForever) {
+     if (mounted) {
+       ScaffoldMessenger.of(context).showSnackBar(
+         const SnackBar(content: Text('Permissão de localização negada.')),
+       );
+     }
+     return false;
+   }
+   return true;
  }
 
  Future<String?> _getOrsApiKey() async {
@@ -176,7 +221,7 @@ class _MapViewerEditorPageState extends State<MapViewerEditorPage> {
    try {
      final resp = await http.get(
        uri,
-        headers: const {"Accept": "application/json"},
+       headers: const {"Accept": "application/json"},
      );
      if (resp.statusCode == 200) {
        final json = jsonDecode(resp.body) as Map<String, dynamic>;
