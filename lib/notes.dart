@@ -50,7 +50,12 @@ class _NotesPageState extends State<NotesPage> {
    });
    try {
      await _col
-         .add({'description': text, 'createdAt': FieldValue.serverTimestamp()})
+         .add({
+           'description': text,
+           'createdAt': FieldValue.serverTimestamp(),
+           'date': null,
+           'timeMinutes': null,
+         })
          .then(
            (note) => Notifications.show(
              id: note.id.hashCode,
@@ -146,78 +151,6 @@ class _NotesPageState extends State<NotesPage> {
        ? null
        : data['address']?.toString();
 
-   ll.LatLng? finalLatLng;
-   String? finalAddress;
-
-   final init = data['initial'];
-   if (init is Map) {
-     final ipos = init['position'];
-     GeoPoint? igp;
-     if (ipos is GeoPoint) {
-       igp = ipos;
-     } else if (ipos is Map && ipos['geopoint'] is GeoPoint) {
-       igp = ipos['geopoint'] as GeoPoint;
-     }
-     if (igp != null) initialLatLng = ll.LatLng(igp.latitude, igp.longitude);
-     final ia = (init['address'] as String?)?.trim();
-     if (ia != null && ia.isNotEmpty) initialAddress = ia;
-   }
-
-   final fin = data['final'];
-   if (fin is Map) {
-     final fpos = fin['position'];
-     GeoPoint? fgp;
-     if (fpos is GeoPoint) {
-       fgp = fpos;
-     } else if (fpos is Map && fpos['geopoint'] is GeoPoint) {
-       fgp = fpos['geopoint'] as GeoPoint;
-     }
-     if (fgp != null) finalLatLng = ll.LatLng(fgp.latitude, fgp.longitude);
-     final fa = (fin['address'] as String?)?.trim();
-     if (fa != null && fa.isNotEmpty) finalAddress = fa;
-   }
-
-   final legacyRoute = data['route'];
-   if (legacyRoute is Map) {
-     final origin = legacyRoute['origin'];
-     if (origin is Map) {
-       final oPos = origin['position'];
-       GeoPoint? ogp;
-       if (oPos is GeoPoint) {
-         ogp = oPos;
-       } else if (oPos is Map && oPos['geopoint'] is GeoPoint) {
-         ogp = oPos['geopoint'] as GeoPoint;
-       }
-       if (ogp != null) initialLatLng = ll.LatLng(ogp.latitude, ogp.longitude);
-       final oa = (origin['address'] as String?)?.trim();
-       if (oa != null && oa.isNotEmpty) initialAddress = oa;
-     }
-
-     final dest = legacyRoute['destination'];
-     if (dest is Map) {
-       final dPos = dest['position'];
-       GeoPoint? dgp;
-       if (dPos is GeoPoint) {
-         dgp = dPos;
-       } else if (dPos is Map && dPos['geopoint'] is GeoPoint) {
-         dgp = dPos['geopoint'] as GeoPoint;
-       }
-       if (dgp != null) finalLatLng = ll.LatLng(dgp.latitude, dgp.longitude);
-       final da = (dest['address'] as String?)?.trim();
-       if (da != null && da.isNotEmpty) finalAddress = da;
-     }
-   }
-
-   String? polyline6 = (data['polyline6'] as String?)?.trim();
-   double? distanceM = (data['distanceM'] as num?)?.toDouble();
-   double? durationS = (data['durationS'] as num?)?.toDouble();
-
-   if ((polyline6 == null || polyline6.isEmpty) && legacyRoute is Map) {
-     polyline6 = (legacyRoute['polyline6'] as String?)?.trim();
-     distanceM ??= (legacyRoute['distanceM'] as num?)?.toDouble();
-     durationS ??= (legacyRoute['durationS'] as num?)?.toDouble();
-   }
-
    Navigator.push(
      context,
      MaterialPageRoute(
@@ -226,62 +159,106 @@ class _NotesPageState extends State<NotesPage> {
          initialLatLng: initialLatLng,
          initialZoom: initialZoom,
          initialAddress: initialAddress,
-         finalLatLng: finalLatLng,
-         finalAddress: finalAddress,
-         initialPolyline6: polyline6,
-         initialDistanceM: distanceM,
-         initialDurationS: durationS,
        ),
      ),
    );
  }
 
- String? _routeSubtitle(Map<String, dynamic> data) {
-   String? iAddr;
-   String? fAddr;
-   double? distM = (data['distanceM'] as num?)?.toDouble();
-   double? durS = (data['durationS'] as num?)?.toDouble();
+ String formatDate(Timestamp? ts) {
+   if (ts == null) return '--';
+   final d = ts.toDate();
+   return '${d.month.toString().padLeft(2, '0')}/${d.year}';
+ }
 
-   final init = data['initial'];
-   if (init is Map) {
-     final ia = (init['address'] as String?)?.trim();
-     if (ia != null && ia.isNotEmpty) iAddr = ia;
-   }
-   final fin = data['final'];
-   if (fin is Map) {
-     final fa = (fin['address'] as String?)?.trim();
-     if (fa != null && fa.isNotEmpty) fAddr = fa;
-   }
+ String formatTimeMinutes(int? minutes) {
+   if (minutes == null) return '--';
+   final h = (minutes ~/ 60).toString().padLeft(2, '0');
+   final m = (minutes % 60).toString().padLeft(2, '0');
+   return '$h:$m';
+ }
 
-   if (iAddr == null || fAddr == null) {
-     final route = data['route'];
-     if (route is Map) {
-       final origin = route['origin'];
-       if (origin is Map) {
-         final oa = (origin['address'] as String?)?.trim();
-         if (oa != null && oa.isNotEmpty) iAddr = oa;
-       }
-       final dest = route['destination'];
-       if (dest is Map) {
-         final da = (dest['address'] as String?)?.trim();
-         if (da != null && da.isNotEmpty) fAddr = da;
-       }
-       distM ??= (route['distanceM'] as num?)?.toDouble();
-       durS ??= (route['durationS'] as num?)?.toDouble();
+ Future<void> _pickDate(
+   DocumentReference<Map<String, dynamic>> noteRef,
+   Timestamp? current,
+ ) async {
+   final initial = (current ?? Timestamp.fromDate(DateTime.now())).toDate();
+   final selected = await showDatePicker(
+     context: context,
+     initialDate: initial,
+     firstDate: DateTime(2000),
+     lastDate: DateTime(2100),
+   );
+   if (selected != null) {
+     try {
+       await noteRef.update({
+         'date': Timestamp.fromDate(selected),
+         'updatedAt': FieldValue.serverTimestamp(),
+       });
+       if (mounted) setState(() {});
+     } catch (e) {
+       setState(() => message = 'Erro ao salvar data: $e');
      }
    }
+ }
 
-   if (iAddr != null && fAddr != null) {
-     final parts = <String>['$iAddr → $fAddr'];
-     if (distM != null) parts.add('${(distM / 1000).toStringAsFixed(2)} km');
-     if (durS != null) parts.add('${(durS / 60).toStringAsFixed(0)} min');
-     return parts.join(' · ');
+ Future<void> _pickTime(
+   DocumentReference<Map<String, dynamic>> noteRef,
+   int? currentMinutes,
+ ) async {
+   final initialHour = (currentMinutes ?? 540) ~/ 60;
+   final initialMinute = (currentMinutes ?? 540) % 60;
+
+   final selected = await showTimePicker(
+     context: context,
+     initialTime: TimeOfDay(hour: initialHour, minute: initialMinute),
+   );
+   if (selected != null) {
+     final minutes = selected.hour * 60 + selected.minute;
+     try {
+       await noteRef.update({
+         'timeMinutes': minutes,
+         'updatedAt': FieldValue.serverTimestamp(),
+       });
+       if (mounted) setState(() {});
+     } catch (e) {
+       setState(() => message = 'Erro ao salvar horário: $e');
+     }
    }
+ }
 
-   iAddr ??= (data['address'] as String?)?.trim();
-   if (iAddr != null && iAddr.isNotEmpty) return iAddr;
-
-   return null;
+ Widget _iconWithLabel({
+   required IconData icon,
+   required String label,
+   required VoidCallback? onPressed,
+   String? tooltip,
+ }) {
+   final textTheme = Theme.of(context).textTheme;
+   return SizedBox(
+     width: 56,
+     child: Column(
+       mainAxisSize: MainAxisSize.min,
+       children: [
+         IconButton(
+           icon: Icon(icon, size: 20),
+           tooltip: tooltip,
+           padding: EdgeInsets.zero,
+           constraints: const BoxConstraints.tightFor(width: 40, height: 36),
+           visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+           onPressed: onPressed,
+         ),
+         const SizedBox(height: 2),
+         Text(
+           label.isEmpty ? '—' : label,
+           maxLines: 1,
+           overflow: TextOverflow.ellipsis,
+           style: textTheme.labelSmall?.copyWith(
+             height: 1.0,
+             color: Theme.of(context).colorScheme.onSurfaceVariant,
+           ),
+         ),
+       ],
+     ),
+   );
  }
 
  @override
@@ -351,6 +328,15 @@ class _NotesPageState extends State<NotesPage> {
                        final data = doc.data();
                        final isEditing = editingId == doc.id;
 
+                       final String? subtitleText =
+                           (data['address'] as String?)?.trim().isEmpty == true
+                           ? null
+                           : data['address']?.toString();
+
+                       final Timestamp? tsDate = data['date'] as Timestamp?;
+                       final int? timeMinutes = (data['timeMinutes'] as num?)
+                           ?.toInt();
+
                        if (isEditing) {
                          return Padding(
                            padding: const EdgeInsets.symmetric(
@@ -389,9 +375,9 @@ class _NotesPageState extends State<NotesPage> {
                          );
                        }
 
-                       final subtitleText = _routeSubtitle(data);
-
                        return ListTile(
+                         isThreeLine: subtitleText != null,
+                         minVerticalPadding: 8,
                          title: Text((data['description'] ?? '').toString()),
                          subtitle: subtitleText == null
                              ? null
@@ -401,21 +387,44 @@ class _NotesPageState extends State<NotesPage> {
                                  overflow: TextOverflow.ellipsis,
                                ),
                          onTap: () => _startInlineEdit(doc),
-                         trailing: Row(
-                           mainAxisSize: MainAxisSize.min,
-                           children: [
-                             IconButton(
-                               icon: const Icon(Icons.map_rounded),
-                               tooltip: 'Mapa',
-                               onPressed: () =>
-                                   _openMapViewer(_col.doc(doc.id), data),
-                             ),
-                             IconButton(
-                               icon: const Icon(Icons.delete_outline),
-                               tooltip: 'Remover',
-                               onPressed: () => _remove(doc.id),
-                             ),
-                           ],
+                         trailing: FittedBox(
+                           fit: BoxFit.scaleDown,
+                           alignment: Alignment.centerRight,
+                           child: Row(
+                             mainAxisSize: MainAxisSize.min,
+                             children: [
+                               _iconWithLabel(
+                                 icon: Icons.map_rounded,
+                                 label: 'Mapa',
+                                 tooltip: 'Abrir mapa',
+                                 onPressed: () =>
+                                     _openMapViewer(_col.doc(doc.id), data),
+                               ),
+                               const SizedBox(width: 4),
+                               _iconWithLabel(
+                                 icon: Icons.event,
+                                 label: formatDate(tsDate),
+                                 tooltip: 'Selecionar data',
+                                 onPressed: () =>
+                                     _pickDate(_col.doc(doc.id), tsDate),
+                               ),
+                               const SizedBox(width: 4),
+                               _iconWithLabel(
+                                 icon: Icons.access_time,
+                                 label: formatTimeMinutes(timeMinutes),
+                                 tooltip: 'Selecionar horário',
+                                 onPressed: () =>
+                                     _pickTime(_col.doc(doc.id), timeMinutes),
+                               ),
+                               const SizedBox(width: 4),
+                               _iconWithLabel(
+                                 icon: Icons.delete_outline,
+                                 label: 'Remover',
+                                 tooltip: 'Remover nota',
+                                 onPressed: () => _remove(doc.id),
+                               ),
+                             ],
+                           ),
                          ),
                        );
                      },
@@ -427,6 +436,4 @@ class _NotesPageState extends State<NotesPage> {
          ),
        ),
      ),
-   );
- }
-}
+   );}}
