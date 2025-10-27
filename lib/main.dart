@@ -7,6 +7,7 @@ import 'login.dart';
 import 'welcome.dart';
 import 'notes.dart';
 import 'notifications.dart';
+import 'l10n/app_localizations.dart';
 
 Future<void> main() async {
  WidgetsFlutterBinding.ensureInitialized();
@@ -24,6 +25,8 @@ class MyApp extends StatelessWidget {
    return MaterialApp(
      title: 'Firebase App',
      theme: ThemeData(primarySwatch: Colors.indigo),
+     localizationsDelegates: AppLocalizations.localizationsDelegates,
+     supportedLocales: AppLocalizations.supportedLocales,
      home: const AuthGate(),
    );
  }
@@ -69,7 +72,7 @@ class HomePage extends StatelessWidget {
            ),
            ListTile(
              leading: const Icon(Icons.note),
-             title: const Text('Anotações'),
+             title: Text(AppLocalizations.of(context)!.notes),
              onTap: () async {
                Navigator.push(
                  context,
